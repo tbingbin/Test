@@ -19,12 +19,16 @@
             <result property="dSection" column="d_section"/>
             <result property="dPrice" column="d_price"/>
             <result property="dAvgStar" column="d_avg_star"/>
+            <result property="dPeople" column="d_people"/>
         </association>
     </resultMap>
 
     <select id="findByTime" resultMap="arrangeDoctorMap">
         select * from v_doctor_arrange 
-        where ar_time=#{ar_time} and d_section=#{d_section}
+        where ar_time=#{ar_time}
+        <if test="d_section != null and d_section != ''">
+            and d_section=#{d_section}
+        </if>
     </select>
 
     <resultMap id="arrangeMap" type="com.shanzhu.hospital.entity.po.Arrange">

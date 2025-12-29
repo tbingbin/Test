@@ -256,12 +256,26 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Orders> implement
 
     /**
      * 更新挂号单
+     * 处理预约时，会同时更新状态为已就诊（oState=1）和结束时间（oEnd）
+     * 确保每个预约只能被处理一次
      *
      * @param orders 挂号单信息
      * @return 结果
      */
     @Override
     public Boolean updateOrder(Orders orders) {
+        // 先检查预约是否存在且状态为待处理（oState=0或null）
+        Orders existingOrder = this.getById(orders.getOId());
+        if (existingOrder == null) {
+            throw new RuntimeException("预约不存在");
+        }
+        
+        // 检查预约是否已被处理过
+        Integer oState = existingOrder.getOState();
+        if (oState != null && oState == 1) {
+            throw new RuntimeException("该预约已被处理，不能重复处理");
+        }
+        
         //设置挂号单状态
         orders.setOState(1);
 
@@ -397,13 +411,31 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Orders> implement
 
     /**
      * 增加诊断及医生意见
+     * 处理预约时，会同时更新状态为已就诊（oState=1）和结束时间（oEnd）
+     * 确保每个预约只能被处理一次
      *
      * @param order 挂号单信息
      * @return 结果
      */
     public Boolean updateOrderByAdd(Orders order) {
-        if (orderMapper.updateOrderByAdd(order) == 0) {
-            return Boolean.FALSE;
+        // 先检查预约是否存在且状态为待处理（oState=0或null）
+        Orders existingOrder = this.getById(order.getOId());
+        if (existingOrder == null) {
+            throw new RuntimeException("预约不存在");
+        }
+        
+        // 检查预约是否已被处理过
+        Integer oState = existingOrder.getOState();
+        if (oState != null && oState == 1) {
+            throw new RuntimeException("该预约已被处理，不能重复处理");
+        }
+        
+        // 更新预约信息（包括状态和结束时间）
+        // SQL中已经包含了状态检查和更新逻辑
+        int updateCount = orderMapper.updateOrderByAdd(order);
+        if (updateCount == 0) {
+            // 如果更新失败，可能是预约已被处理或不存在
+            throw new RuntimeException("更新失败，预约可能已被处理或不存在");
         }
 
         return Boolean.TRUE;

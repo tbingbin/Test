@@ -61,7 +61,15 @@
     </select>
 
     <update id="updateOrderByAdd" parameterType="com.shanzhu.hospital.entity.po.Orders">
-        update orders set o_check = concat(o_check,#{oCheck}),o_drug = concat(o_drug,#{oDrug}),o_total_price = #{oTotalPrice},o_advice = #{oAdvice} where o_id=#{oId}
+        update orders 
+        set o_check = concat(ifnull(o_check, ''), #{oCheck}),
+            o_drug = concat(ifnull(o_drug, ''), #{oDrug}),
+            o_total_price = #{oTotalPrice},
+            o_advice = #{oAdvice},
+            o_state = 1,
+            o_end = now()
+        where o_id = #{oId} 
+        and (o_state = 0 or o_state is null)
     </update>
 
 
@@ -114,6 +122,7 @@
         JOIN patient_user p ON o.p_id = p.p_id
         WHERE o.d_id = #{dId}
         AND o.o_start LIKE CONCAT(#{oStart}, '%')
+        AND (o.o_state = 0 OR o.o_state IS NULL)
         ORDER BY o.o_start
     </select>
 

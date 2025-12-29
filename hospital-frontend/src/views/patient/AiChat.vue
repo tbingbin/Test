@@ -26,6 +26,10 @@
                 </div>
                 <div class="message-content">
                     <div class="message-text" v-html="formatMessage(message.content)"></div>
+                    <div v-if="message.role === 'assistant' && message.content && message.content.trim() !== ''" class="disclaimer-in-message">
+                        <i class="el-icon-warning"></i>
+                        <span>本AI对话内容仅供参考，不构成医疗诊断，如有不适请及时就医</span>
+                    </div>
                     <div class="message-time">{{ formatTime(message.time) }}</div>
                 </div>
             </div>
@@ -558,6 +562,34 @@ export default {
     }
 }
 
+// 消息中的免责声明
+.disclaimer-in-message {
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    border-left: 3px solid #ffc107;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: #ff9800;
+    font-weight: 500;
+    line-height: 1.4;
+    width: 100%;
+    box-sizing: border-box;
+    
+    i {
+        font-size: 12px;
+        color: #ff9800;
+        flex-shrink: 0;
+    }
+    
+    span {
+        flex: 1;
+    }
+}
+
 // 输入区域容器
 .chat-input-wrapper {
     padding: 20px;
@@ -733,6 +765,15 @@ export default {
             .message-content {
                 max-width: 85%;
             }
+        }
+    }
+    
+    .disclaimer-in-message {
+        padding: 6px 10px;
+        font-size: 9px;
+        
+        i {
+            font-size: 11px;
         }
     }
     
