@@ -323,6 +323,220 @@ public class DeepSeekClient {
     }
     
     /**
+     * 生成文本嵌入向量（Embedding）
+     * 
+     * @param text 要生成向量的文本
+     * @return 向量数组
+     */
+    public double[] createEmbedding(String text) {
+        CloseableHttpClient httpClient = null;
+        try {
+            String url = aiConfig.getApiBaseUrl() + "/embeddings";
+            log.info("请求DeepSeek Embedding API: {}", url);
+            
+            httpClient = HttpClients.createDefault();
+            HttpPost httpPost = new HttpPost(url);
+            
+            // 设置请求头
+            httpPost.setHeader("Content-Type", "application/json");
+            httpPost.setHeader("Authorization", "Bearer " + aiConfig.getApiKey());
+            
+            // 构建请求体
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("model", "deepseek-embedding"); // DeepSeek的embedding模型
+            requestBody.put("input", text);
+            
+            String requestBodyJson = JSON.toJSONString(requestBody);
+            log.debug("Embedding请求体: {}", requestBodyJson);
+            
+            StringEntity entity = new StringEntity(requestBodyJson, StandardCharsets.UTF_8);
+            httpPost.setEntity(entity);
+            
+            // 执行请求
+            CloseableHttpResponse response = httpClient.execute(httpPost);
+            
+            // 检查HTTP状态码
+            int statusCode = response.getStatusLine().getStatusCode();
+            log.info("Embedding API响应状态码: {}", statusCode);
+            
+            if (statusCode != 200) {
+                HttpEntity errorEntity = response.getEntity();
+                String errorMessage = "Embedding API请求失败，状态码: " + statusCode;
+                if (errorEntity != null) {
+                    try {
+                        String errorText = EntityUtils.toString(errorEntity, StandardCharsets.UTF_8);
+                        log.error("Embedding API错误响应: {}", errorText);
+                        JSONObject errorJson = JSON.parseObject(errorText);
+                        if (errorJson.containsKey("error")) {
+                            JSONObject error = errorJson.getJSONObject("error");
+                            errorMessage = error.getString("message") != null ? 
+                                error.getString("message") : errorMessage;
+                        }
+                    } catch (Exception e) {
+                        log.warn("解析错误响应失败", e);
+                    }
+                }
+                response.close();
+                httpClient.close();
+                throw new RuntimeException(errorMessage);
+            }
+            
+            HttpEntity responseEntity = response.getEntity();
+            
+            if (responseEntity != null) {
+                String responseText = EntityUtils.toString(responseEntity, StandardCharsets.UTF_8);
+                log.debug("Embedding API响应内容: {}", responseText);
+                
+                JSONObject jsonObject = JSON.parseObject(responseText);
+                
+                // 检查是否有error字段
+                if (jsonObject.containsKey("error")) {
+                    JSONObject error = jsonObject.getJSONObject("error");
+                    String errorMsg = error != null ? error.getString("message") : "未知错误";
+                    log.error("Embedding API返回错误: {}", errorMsg);
+                    throw new RuntimeException("Embedding API错误: " + errorMsg);
+                }
+                
+                JSONArray data = jsonObject.getJSONArray("data");
+                if (data != null && data.size() > 0) {
+                    JSONObject firstItem = data.getJSONObject(0);
+                    JSONArray embedding = firstItem.getJSONArray("embedding");
+                    if (embedding != null) {
+                        double[] vector = new double[embedding.size()];
+                        for (int i = 0; i < embedding.size(); i++) {
+                            vector[i] = embedding.getDoubleValue(i);
+                        }
+                        log.info("成功生成向量，维度: {}", vector.length);
+                        return vector;
+                    } else {
+                        log.warn("响应中embedding为空，完整响应: {}", responseText);
+                        throw new RuntimeException("Embedding API返回空向量");
+                    }
+                } else {
+                    log.warn("响应中没有data数组，完整响应: {}", responseText);
+                    throw new RuntimeException("Embedding API响应格式异常，缺少data数组");
+                }
+            } else {
+                log.error("Embedding API响应实体为空");
+                throw new RuntimeException("Embedding API响应为空");
+            }
+            
+        } catch (Exception e) {
+            log.error("Embedding请求失败", e);
+            e.printStackTrace();
+            throw new RuntimeException("Embedding API调用失败: " + e.getMessage(), e);
+        } finally {
+            try {
+                if (httpClient != null) {
+                    httpClient.close();
+                }
+            } catch (Exception e) {
+                log.warn("关闭HTTP客户端失败", e);
+            }
+        }
+    }
+    
+    /**
+     * 使用NLP模型进行意图识别
+     * 
+     * @param userMessage 用户消息
+     * @param conversationHistory 对话历史
+     * @return 识别的意图
+     */
+    public String recognizeIntentWithNLP(String userMessage, List<Map<String, String>> conversationHistory) {
+        try {
+            // 构建意图识别的系统提示词
+            List<Map<String, String>> messages = new ArrayList<>();
+            
+            Map<String, String> systemMsg = new HashMap<>();
+            systemMsg.put("role", "system");
+            systemMsg.put("content", "你是一个意图识别助手。根据用户消息，识别用户的意图。\n" +
+                "可能的意图包括：\n" +
+                "1. QUERY_SCHEDULE - 查询排班、预约、挂号、时间相关\n" +
+                "2. RECOMMEND_DOCTOR - 推荐医生、哪个医生好、评价好的医生\n" +
+                "3. FIND_DEPARTMENT - 科室选择、症状咨询、挂什么科\n" +
+                "4. QUERY_POLICY - 流程、须知、注意事项\n" +
+                "5. GENERAL_QA - 其他一般性问题\n\n" +
+                "请只返回意图代码，不要返回其他内容。");
+            messages.add(systemMsg);
+            
+            // 添加上下文（最近3轮对话）
+            if (conversationHistory != null && !conversationHistory.isEmpty()) {
+                int startIndex = Math.max(0, conversationHistory.size() - 6); // 最近3轮（每轮2条消息）
+                for (int i = startIndex; i < conversationHistory.size(); i++) {
+                    messages.add(conversationHistory.get(i));
+                }
+            }
+            
+            // 添加当前用户消息
+            Map<String, String> userMsg = new HashMap<>();
+            userMsg.put("role", "user");
+            userMsg.put("content", "识别以下消息的意图：" + userMessage);
+            messages.add(userMsg);
+            
+            // 调用API进行意图识别
+            String response = chat(messages);
+            
+            // 解析响应，提取意图代码
+            String intent = response.trim().toUpperCase();
+            
+            // 验证意图是否有效
+            String[] validIntents = {"QUERY_SCHEDULE", "RECOMMEND_DOCTOR", "FIND_DEPARTMENT", "QUERY_POLICY", "GENERAL_QA"};
+            for (String validIntent : validIntents) {
+                if (intent.contains(validIntent)) {
+                    log.info("NLP识别意图: {}", validIntent);
+                    return validIntent;
+                }
+            }
+            
+            // 如果无法识别，使用关键词匹配作为后备方案
+            log.warn("NLP无法识别意图，使用关键词匹配作为后备方案");
+            return recognizeIntentFallback(userMessage);
+            
+        } catch (Exception e) {
+            log.error("NLP意图识别失败，使用关键词匹配作为后备方案", e);
+            return recognizeIntentFallback(userMessage);
+        }
+    }
+    
+    /**
+     * 后备意图识别方法（关键词匹配）
+     */
+    private String recognizeIntentFallback(String userMessage) {
+        String message = userMessage.toLowerCase();
+        
+        // 查询排班意图
+        if (message.contains("排班") || message.contains("预约") || message.contains("挂号") || 
+            message.contains("什么时候") || message.contains("时间") || 
+            message.contains("今天") || message.contains("明天") || message.contains("后天") ||
+            message.matches(".*\\d{1,2}月\\d{1,2}号.*") || message.matches(".*\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}.*") ||
+            message.contains("能看") || message.contains("有医生")) {
+            return "QUERY_SCHEDULE";
+        }
+        
+        // 推荐医生意图
+        if (message.contains("推荐") || message.contains("哪个医生") || message.contains("哪个大夫") ||
+            message.contains("好医生") || message.contains("评价好") || message.contains("评分高") ||
+            message.contains("口碑好") || message.contains("推荐医生")) {
+            return "RECOMMEND_DOCTOR";
+        }
+        
+        // 流程查询意图
+        if (message.contains("流程") || message.contains("怎么") || message.contains("如何") ||
+            message.contains("须知") || message.contains("注意")) {
+            return "QUERY_POLICY";
+        }
+        
+        // 科室选择意图
+        if (message.contains("科室") || message.contains("挂什么") || message.contains("看什么") ||
+            message.contains("症状") || message.contains("难受") || message.contains("疼")) {
+            return "FIND_DEPARTMENT";
+        }
+        
+        return "GENERAL_QA";
+    }
+    
+    /**
      * 流式回调接口
      */
     public interface StreamCallback {

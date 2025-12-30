@@ -72,10 +72,23 @@ public class AiAgentService {
     }
     
     /**
-     * 意图识别
+     * 意图识别（使用NLP模型）
      */
     private String recognizeIntent(String userMessage, List<Map<String, String>> conversationHistory) {
-        // 简单的关键词匹配（实际可以使用更复杂的NLP模型）
+        try {
+            // 使用NLP模型进行意图识别
+            return deepSeekClient.recognizeIntentWithNLP(userMessage, conversationHistory);
+        } catch (Exception e) {
+            log.error("NLP意图识别失败，使用关键词匹配作为后备方案", e);
+            // 如果NLP识别失败，使用关键词匹配作为后备方案
+            return recognizeIntentFallback(userMessage);
+        }
+    }
+    
+    /**
+     * 后备意图识别方法（关键词匹配）
+     */
+    private String recognizeIntentFallback(String userMessage) {
         String message = userMessage.toLowerCase();
         
         // 查询排班意图（包括日期查询）
